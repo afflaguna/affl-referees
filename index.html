@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AFFL REFEREES — La Laguna</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;} body{margin:0;background:#020617;}
+    .font-display{font-family:'Bebas Neue',sans-serif;}
+    ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:#0f172a;}::-webkit-scrollbar-thumb{background:#374151;border-radius:3px;}
+    .fade-in{animation:fi .25s ease;} @keyframes fi{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useRef } = React;
+
+const SUPA_URL  = "https://hooqbsfqjtgynyvyfazk.supabase.co";
+const SUPA_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhvb3Fic2ZxanRneW55dnlmYXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNDI4MTQsImV4cCI6MjA5NDgxODgxNH0.zNW0E2M53oVCEWSlgpvk5HhwIhKdkiKqi4z3TVSEB8E";
+const AUTH_KEY  = "affl_auth";
+const PWD_HASH  = btoa("borregos1");
+
+const isLoggedIn  = () => localStorage.getItem(AUTH_KEY) === PWD_HASH;
+const saveLogin   = () => localStorage.setItem(AUTH_KEY, PWD_HASH);
+const clearLogin  = () => localStorage.removeItem(AUTH_KEY);
+
+// ── DATABASE ──────────────────────────────────────────────────────────────────
+const H = { "apikey":SUPA_KEY, "Authorization":`Bearer ${SUPA_KEY}`, "Content-Type":"application/json", "Prefer":"return=representation" };
+const DB = {
+  async fetch(path, opts={}) {
+    const res = await fetch(`${SUPA_URL}/rest/v1${path}`, { ...opts, headers:{ ...H, ...opts.headers } });
+    const text = await res.text();
+    if (!res.ok) throw new Error(text);
+    return text ? JSON.parse(text) : null;
+  },
+  getAll()        { return this.fetch("/arbitros?select=*&order=created_at.asc"); },
+  insert(data)    { return this.fetch("/arbitros", { method:"POST", body:JSON.stringify(data) }); },
+  update(id, d)   { return this.fetch(`/arbitros?id=eq.${id}`, { method:"PATCH", body:JSON.stringify(d) }); },
+  delete(id)      { return this.fetch(`/arbitros?id=eq.${id}`, { method:"DELETE", headers:{Prefer:""} }); },
+};
+
+const genCodigo = (id) => `AF-REF-${String(id).padStart(4,"0")}`;
+const ROLES     = ["PRINCIPAL","LÍNEA","BACK JUDGE"];
+const ESTATUSES = ["Activo","Inactivo","Suspendido"];
+const GENEROS   = ["MASCULINO","FEMENINO"];
+const NV_NO     = ["Trainee","Nivel Básico"];
+const NV_SI     = ["Certificado AFFL","Certificado FMFA"];
+const EMPTY = { nombre:"",apellido_paterno:"",apellido_materno:"",fecha_nacimiento:"",genero:"",curp:"",fotografia:"",telefono:"",correo:"",ciudad:"",esta_certificado:"",nivel:"",rol:"",fecha_certificacion:"",fecha_vencimiento:"",ligas:"",estatus:"Activo" };
+const BADGE = { Activo:"bg-emerald-500/20 text-emerald-400 border border-emerald-500/30", Inactivo:"bg-slate-500/20 text-slate-400 border border-slate-500/30", Suspendido:"bg-red-500/20 text-red-400 border border-red-500/30" };
+const NVC = { "Trainee":"bg-slate-700/60 text-slate-300","Nivel Básico":"bg-blue-500/20 text-blue-400","Certificado AFFL":"bg-blue-500/20 text-blue-400","Certificado FMFA":"bg-indigo-500/20 text-indigo-400" };
+const iCls = "bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all w-full uppercase tracking-wide";
+const sCls = "bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500/60 w-full cursor-pointer";
+
+function loadScript(src) {
+  return new Promise((res,rej)=>{ if(document.querySelector(`script[src="${src}"]`)){res();return;} const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+}
+
+// ── LOGIN ─────────────────────────────────────────────────────────────────────
+const LoginScreen = ({ onLogin }) => {
+  const [pwd, setPwd]       = useState("");
+  const [error, setError]   = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+
+  const handle = () => {
+    if (pwd === "borregos1") { saveLogin(); onLogin(); }
+    else { setError("Contraseña incorrecta"); setPwd(""); }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm fade-in">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center font-display text-white text-3xl mx-auto mb-4">AF</div>
+          <div className="font-display text-4xl tracking-widest text-white">AFFL REFEREES</div>
+          <div className="text-slate-500 text-sm mt-1 uppercase tracking-widest">La Laguna</div>
+        </div>
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="font-display text-xl tracking-widest text-blue-400">ACCESO RESTRINGIDO</div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">Contraseña</label>
+            <div className="relative">
+              <input
+                type={showPwd ? "text" : "password"}
+                value={pwd}
+                onChange={e => setPwd(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handle()}
+                placeholder="••••••••"
+                className="bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all w-full pr-16"/>
+              <button type="button" onClick={() => setShowPwd(!showPwd)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-all">
+                {showPwd ? "Ocultar" : "Ver"}
+              </button>
+            </div>
+          </div>
+          {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-red-400 text-sm">{error}</div>}
+          <button onClick={handle} className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all">
+            Entrar →
+          </button>
+        </div>
+        <div className="text-center mt-4 text-slate-700 text-xs">AFFL La Laguna · Sistema de Gestión</div>
+      </div>
+    </div>
+  );
+};
+
+// ── FIELD ─────────────────────────────────────────────────────────────────────
+const Field = ({label,children}) => (
+  <div className="flex flex-col gap-1">
+    <label className="text-xs font-semibold uppercase tracking-widest text-blue-400/80">{label}</label>
+    {children}
+  </div>
+);
+
+// ── PHOTO CROPPER ─────────────────────────────────────────────────────────────
+const SIZE=240;
+const PhotoCropper = ({src,onConfirm,onCancel}) => {
+  const canvasRef=useRef(); const imgRef=useRef(null); const dragRef=useRef({active:false,sx:0,sy:0,ox:0,oy:0});
+  const [offset,setOffset]=useState({x:0,y:0}); const [scale,setScale]=useState(1); const [minScale,setMinScale]=useState(1); const [loaded,setLoaded]=useState(false);
+  useEffect(()=>{ const img=new Image(); img.onload=()=>{ imgRef.current=img; const ms=Math.max(SIZE/img.width,SIZE/img.height); setMinScale(ms);setScale(ms);setOffset({x:0,y:0});setLoaded(true); }; img.src=src; },[src]);
+  useEffect(()=>{ if(!loaded||!canvasRef.current||!imgRef.current)return; const ctx=canvasRef.current.getContext("2d"); const img=imgRef.current; ctx.clearRect(0,0,SIZE,SIZE); const w=img.width*scale,h=img.height*scale; const x=(SIZE-w)/2+offset.x,y=(SIZE-h)/2+offset.y; ctx.save(); ctx.beginPath();ctx.arc(SIZE/2,SIZE/2,SIZE/2,0,Math.PI*2);ctx.clip(); ctx.drawImage(img,x,y,w,h); ctx.restore(); },[loaded,offset,scale]);
+  const startDrag=(cx,cy)=>{dragRef.current={active:true,sx:cx,sy:cy,ox:offset.x,oy:offset.y};};
+  const moveDrag=(cx,cy)=>{ if(!dragRef.current.active)return; const{sx,sy,ox,oy}=dragRef.current; setOffset({x:ox+cx-sx,y:oy+cy-sy}); };
+  const endDrag=()=>{dragRef.current.active=false;};
+  const confirm=()=>{ const out=document.createElement("canvas"); out.width=SIZE;out.height=SIZE; out.getContext("2d").drawImage(canvasRef.current,0,0); onConfirm(out.toDataURL("image/jpeg",0.85)); };
+  return (
+    <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-xs w-full space-y-5">
+        <div><div className="font-display text-2xl tracking-widest text-blue-400">AJUSTAR FOTO</div><p className="text-slate-400 text-xs mt-1">Arrastra para centrar el rostro</p></div>
+        <div className="flex justify-center">
+          <canvas ref={canvasRef} width={SIZE} height={SIZE}
+            style={{borderRadius:"50%",border:"3px solid rgba(59,130,246,0.5)",cursor:"grab",touchAction:"none",display:"block"}}
+            onMouseDown={e=>startDrag(e.clientX,e.clientY)} onMouseMove={e=>moveDrag(e.clientX,e.clientY)} onMouseUp={endDrag} onMouseLeave={endDrag}
+            onTouchStart={e=>startDrag(e.touches[0].clientX,e.touches[0].clientY)}
+            onTouchMove={e=>{e.preventDefault();moveDrag(e.touches[0].clientX,e.touches[0].clientY);}} onTouchEnd={endDrag}/>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs text-slate-500"><span className="uppercase tracking-widest">Zoom</span><span>{Math.round((scale/minScale)*100)}%</span></div>
+          <input type="range" min={minScale} max={minScale*3} step={0.01} value={scale} onChange={e=>setScale(parseFloat(e.target.value))} className="w-full h-1.5 rounded-full accent-blue-500 cursor-pointer"/>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-all">Cancelar</button>
+          <button onClick={confirm} className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all">Usar foto</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FotoUpload = ({value,onChange}) => {
+  const ref=useRef(); const [cropSrc,setCropSrc]=useState(null);
+  const handleFile=(e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCropSrc(ev.target.result); r.readAsDataURL(f); e.target.value=""; };
+  return (
+    <>
+      <div className="flex flex-col items-center gap-2">
+        <div onClick={()=>ref.current.click()} className="w-28 h-28 rounded-full border-2 border-dashed border-slate-600 hover:border-blue-500/60 bg-slate-800/50 flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden">
+          {value?<img src={value} alt="Foto" className="w-full h-full object-cover"/>:<><div className="text-3xl">📷</div><div className="text-[10px] text-slate-500 tracking-widest mt-1">SUBIR FOTO</div></>}
+        </div>
+        {value&&<div className="flex gap-3"><button type="button" onClick={()=>ref.current.click()} className="text-xs text-blue-400">Cambiar</button><button type="button" onClick={()=>onChange("")} className="text-xs text-red-400">Quitar</button></div>}
+        <input ref={ref} type="file" accept="image/*" onChange={handleFile} className="hidden"/>
+      </div>
+      {cropSrc&&<PhotoCropper src={cropSrc} onConfirm={c=>{onChange(c);setCropSrc(null);}} onCancel={()=>setCropSrc(null)}/>}
+    </>
+  );
+};
+
+// ── FORMULARIO ────────────────────────────────────────────────────────────────
+const ArbitroForm = ({formData,setFormData,onSave,onCancel,isEditing,submitting}) => {
+  const esCert=formData.esta_certificado==="si";
+  const niveles=formData.esta_certificado===""?[]:esCert?NV_SI:NV_NO;
+  const setCert=v=>setFormData(f=>({...f,esta_certificado:v,nivel:"",fecha_certificacion:"",fecha_vencimiento:""}));
+  const up=v=>v.toUpperCase();
+  const ok=formData.nombre&&formData.apellido_paterno&&formData.esta_certificado&&formData.nivel&&!submitting;
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="mb-6">
+        <div className="font-display text-3xl tracking-widest">{isEditing?"EDITAR ÁRBITRO":"NUEVO ÁRBITRO"}</div>
+        {isEditing&&<div className="text-slate-500 text-sm mt-1">Código: <span className="text-blue-400 font-semibold">{formData.codigo}</span></div>}
+      </div>
+      <div className="space-y-6">
+        <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="font-display text-lg tracking-widest text-blue-400">DATOS PERSONALES</div>
+          <div className="flex flex-col sm:flex-row gap-6 items-start">
+            <div className="flex flex-col items-center gap-1 flex-shrink-0 w-full sm:w-auto">
+              <div className="text-xs font-semibold uppercase tracking-widest text-blue-400/80 mb-1">Foto</div>
+              <FotoUpload value={formData.fotografia} onChange={v=>setFormData(f=>({...f,fotografia:v}))}/>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 w-full">
+              <Field label="Nombre(s)"><input className={iCls} placeholder="CARLOS" value={formData.nombre} onChange={e=>setFormData(f=>({...f,nombre:up(e.target.value)}))}/></Field>
+              <Field label="Apellido Paterno"><input className={iCls} placeholder="GARCÍA" value={formData.apellido_paterno} onChange={e=>setFormData(f=>({...f,apellido_paterno:up(e.target.value)}))}/></Field>
+              <Field label="Apellido Materno"><input className={iCls} placeholder="LÓPEZ" value={formData.apellido_materno} onChange={e=>setFormData(f=>({...f,apellido_materno:up(e.target.value)}))}/></Field>
+              <Field label="Fecha de Nacimiento"><input type="date" className={iCls} value={formData.fecha_nacimiento} onChange={e=>setFormData(f=>({...f,fecha_nacimiento:e.target.value}))}/></Field>
+              <Field label="Género"><select className={sCls} value={formData.genero} onChange={e=>setFormData(f=>({...f,genero:e.target.value}))}><option value="">Seleccionar...</option>{GENEROS.map(g=><option key={g}>{g}</option>)}</select></Field>
+              <Field label="CURP"><input className={iCls} placeholder="GARC900315HTLRPL09" value={formData.curp} onChange={e=>setFormData(f=>({...f,curp:up(e.target.value)}))}/></Field>
+            </div>
+          </div>
+        </section>
+        <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="font-display text-lg tracking-widest text-blue-400">CONTACTO</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Teléfono"><input className={iCls} placeholder="871-123-4567" value={formData.telefono} onChange={e=>setFormData(f=>({...f,telefono:up(e.target.value)}))}/></Field>
+            <Field label="Correo"><input type="email" className={iCls} placeholder="CARLOS@GMAIL.COM" value={formData.correo} onChange={e=>setFormData(f=>({...f,correo:up(e.target.value)}))}/></Field>
+            <Field label="Ciudad"><input className={iCls} placeholder="TORREÓN" value={formData.ciudad} onChange={e=>setFormData(f=>({...f,ciudad:up(e.target.value)}))}/></Field>
+          </div>
+        </section>
+        <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="font-display text-lg tracking-widest text-blue-400">CERTIFICACIÓN</div>
+          <Field label="¿El árbitro está certificado?">
+            <div className="flex gap-3">
+              {[["si","✓  SÍ, ESTÁ CERTIFICADO"],["no","✕  NO ESTÁ CERTIFICADO"]].map(([v,lbl])=>(
+                <button key={v} type="button" onClick={()=>setCert(v)} className={`flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-all ${formData.esta_certificado===v?(v==="si"?"bg-emerald-500/20 border-emerald-500/50 text-emerald-400":"bg-slate-700 border-slate-600 text-white"):"bg-slate-800/50 border-slate-700 text-slate-500 hover:text-white"}`}>{lbl}</button>
+              ))}
+            </div>
+          </Field>
+          {formData.esta_certificado!==""&&<Field label={esCert?"Tipo de Certificación":"Nivel"}><div className="flex gap-3 flex-wrap">{niveles.map(n=><button key={n} type="button" onClick={()=>setFormData(f=>({...f,nivel:n}))} className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${formData.nivel===n?"bg-blue-500/20 border-blue-500/50 text-blue-400":"bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white"}`}>{n}</button>)}</div></Field>}
+          {esCert&&formData.nivel&&<div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label="Fecha de Certificación"><input type="date" className={iCls} value={formData.fecha_certificacion} onChange={e=>setFormData(f=>({...f,fecha_certificacion:e.target.value}))}/></Field><Field label="Fecha de Vencimiento"><input type="date" className={iCls} value={formData.fecha_vencimiento} onChange={e=>setFormData(f=>({...f,fecha_vencimiento:e.target.value}))}/></Field></div>}
+        </section>
+        <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="font-display text-lg tracking-widest text-blue-400">ROL Y AFILIACIÓN</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Rol en Campo"><select className={sCls} value={formData.rol} onChange={e=>setFormData(f=>({...f,rol:e.target.value}))}><option value="">Seleccionar...</option>{ROLES.map(r=><option key={r}>{r}</option>)}</select></Field>
+            <Field label="Liga(s)"><input className={iCls} placeholder="LIGA NORTE..." value={formData.ligas} onChange={e=>setFormData(f=>({...f,ligas:up(e.target.value)}))}/></Field>
+            <Field label="Estatus"><select className={sCls} value={formData.estatus} onChange={e=>setFormData(f=>({...f,estatus:e.target.value}))}>{ESTATUSES.map(s=><option key={s}>{s}</option>)}</select></Field>
+          </div>
+        </section>
+        <div className="flex gap-3 pb-8">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all">Cancelar</button>
+          <button onClick={onSave} disabled={!ok} className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold transition-all">{submitting?"⏳ GUARDANDO...":isEditing?"GUARDAR CAMBIOS":"REGISTRAR ÁRBITRO"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── ÉXITO ─────────────────────────────────────────────────────────────────────
+const SuccessScreen = ({arbitro,onVerCredencial,onNuevo,onLista}) => (
+  <div className="max-w-md mx-auto text-center space-y-6 py-10 fade-in">
+    <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center mx-auto text-4xl">✓</div>
+    <div><div className="font-display text-4xl tracking-widest text-emerald-400">REGISTRADO</div><div className="text-slate-400 text-sm mt-1">Guardado en Supabase ☁️</div></div>
+    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex gap-4 items-center text-left">
+      {arbitro.fotografia?<img src={arbitro.fotografia} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-blue-500/40 flex-shrink-0"/>:<div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-2xl flex-shrink-0 border-2 border-slate-700">👤</div>}
+      <div>
+        <div className="font-display text-2xl tracking-widest text-blue-400">{arbitro.codigo}</div>
+        <div className="text-white font-bold">{arbitro.nombre} {arbitro.apellido_paterno} {arbitro.apellido_materno}</div>
+        <div className="flex gap-2 mt-1 flex-wrap"><span className={`px-2 py-0.5 rounded text-xs font-semibold ${NVC[arbitro.nivel]||""}`}>{arbitro.nivel}</span><span className={`px-2 py-0.5 rounded text-xs font-semibold ${BADGE[arbitro.estatus]}`}>{arbitro.estatus}</span></div>
+      </div>
+    </div>
+    <div className="flex flex-col gap-3">
+      <button onClick={onVerCredencial} className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all">Ver Credencial y Descargar PNG →</button>
+      <button onClick={onNuevo} className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all">+ Registrar Otro Árbitro</button>
+      <button onClick={onLista} className="w-full py-3 rounded-xl border border-slate-800 hover:bg-slate-900 text-slate-400 font-semibold transition-all">Ver Lista Completa</button>
+    </div>
+  </div>
+);
+
+// ── CREDENCIAL ────────────────────────────────────────────────────────────────
+const Credencial = ({arbitro,onEdit,onDelete}) => {
+  const cardRef=useRef(); const qrRef=useRef();
+  const [ready,setReady]=useState(false); const [downloading,setDownloading]=useState(false); const [qrError,setQrError]=useState(false);
+  useEffect(()=>{ Promise.all([loadScript("https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"),loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js")]).then(()=>setReady(true)).catch(()=>setQrError(true)); },[]);
+  useEffect(()=>{ if(!ready||!qrRef.current||!window.QRCode)return; qrRef.current.innerHTML=""; try{new window.QRCode(qrRef.current,{text:arbitro.codigo,width:110,height:110,colorDark:"#111827",colorLight:"#ffffff",correctLevel:window.QRCode.CorrectLevel?.H});}catch{setQrError(true);} },[ready,arbitro.codigo]);
+  const handleDownload=async()=>{ if(!window.html2canvas||!cardRef.current)return; setDownloading(true); try{ const canvas=await window.html2canvas(cardRef.current,{scale:3,useCORS:true,allowTaint:true,backgroundColor:"#0f172a"}); const link=document.createElement("a"); link.download=`${arbitro.codigo}.png`; link.href=canvas.toDataURL("image/png"); link.click(); }catch(e){console.error(e);} setDownloading(false); };
+  const ec=arbitro.estatus==="Activo"?"#34d399":arbitro.estatus==="Suspendido"?"#f87171":"#94a3b8";
+  return (
+    <div className="max-w-sm mx-auto space-y-4 fade-in">
+      <div className="font-display text-3xl tracking-widest text-white">CREDENCIAL</div>
+      <div ref={cardRef} style={{background:"#0f172a",borderRadius:16,overflow:"hidden",border:"1px solid rgba(59,130,246,0.3)",fontFamily:"sans-serif"}}>
+        <div style={{background:"#2563eb",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:4,color:"#ffffff",lineHeight:1}}>AFFL REFEREES</div><div style={{fontSize:9,color:"rgba(255,255,255,0.6)",letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginTop:2}}>La Laguna · Árbitro Certificado</div></div>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:44,color:"rgba(255,255,255,0.15)",lineHeight:1}}>AF</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingTop:20,paddingBottom:12}}>
+          <div style={{width:88,height:88,borderRadius:"50%",overflow:"hidden",border:"3px solid rgba(59,130,246,0.6)",background:"#1e293b",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:10}}>
+            {arbitro.fotografia?<img src={arbitro.fotografia} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:36}}>👤</span>}
+          </div>
+          <div style={{color:"#ffffff",fontWeight:700,fontSize:15,textAlign:"center",lineHeight:1.2}}>{arbitro.nombre} {arbitro.apellido_paterno}</div>
+          <div style={{color:"#94a3b8",fontSize:12,textAlign:"center"}}>{arbitro.apellido_materno}</div>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",color:"#60a5fa",letterSpacing:4,fontSize:16,marginTop:4}}>{arbitro.codigo}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,padding:"0 16px 12px"}}>
+          {[["Nivel / Cert.",arbitro.nivel],["Rol en Campo",arbitro.rol],["Vencimiento",arbitro.fecha_vencimiento],["Ciudad",arbitro.ciudad]].map(([l,v])=>(
+            <div key={l} style={{background:"rgba(30,41,59,0.8)",borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
+              <div style={{color:"#64748b",fontSize:8,textTransform:"uppercase",letterSpacing:1.5,fontWeight:700}}>{l}</div>
+              <div style={{color:"#f1f5f9",fontSize:11,fontWeight:600,marginTop:2}}>{v||"—"}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:16}}>
+          <div style={{background:"#ffffff",padding:8,borderRadius:12,display:"inline-flex"}}>
+            {qrError?<div style={{width:110,height:110,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:11}}>QR no disponible</div>:<div ref={qrRef}/>}
+          </div>
+          <div style={{color:"#475569",fontSize:9,marginTop:6,letterSpacing:1.5,textTransform:"uppercase"}}>Escanear para verificar</div>
+        </div>
+        <div style={{borderTop:"1px solid #1e293b",background:"rgba(15,23,42,0.6)",padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:ec}}/><span style={{color:ec,fontSize:11,fontWeight:700}}>{arbitro.estatus}</span></div>
+          <span style={{color:"#475569",fontSize:10}}>Reg: {arbitro.fecha_registro}</span>
+        </div>
+      </div>
+      <button onClick={handleDownload} disabled={downloading||!ready} className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-bold transition-all text-sm">{!ready?"⏳ Cargando...":downloading?"⏳ Descargando...":"⬇ Descargar Credencial PNG"}</button>
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-2.5">
+        <div className="font-display text-lg tracking-widest text-blue-400">DETALLES COMPLETOS</div>
+        {[["Código",arbitro.codigo],["CURP",arbitro.curp],["Nacimiento",arbitro.fecha_nacimiento],["Género",arbitro.genero],["Teléfono",arbitro.telefono],["Correo",arbitro.correo],["Ciudad",arbitro.ciudad],["Nivel",arbitro.nivel],["Rol",arbitro.rol],["Cert. desde",arbitro.fecha_certificacion],["Vence",arbitro.fecha_vencimiento],["Liga(s)",arbitro.ligas],["Estatus",arbitro.estatus],["Registro",arbitro.fecha_registro]].filter(([,v])=>v).map(([label,val])=>(
+          <div key={label} className="flex justify-between text-sm border-b border-slate-800/40 pb-2 last:border-0 last:pb-0"><span className="text-slate-500">{label}</span><span className="text-white font-medium text-right">{val}</span></div>
+        ))}
+      </div>
+      <div className="flex gap-3 pb-8">
+        <button onClick={()=>onEdit(arbitro)} className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all">Editar</button>
+        <button onClick={()=>onDelete(arbitro.id)} className="py-3 px-5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold transition-all">Eliminar</button>
+      </div>
+    </div>
+  );
+};
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [loggedIn,setLoggedIn]     = useState(isLoggedIn());
+  const [arbitros,setArbitros]     = useState([]);
+  const [loading,setLoading]       = useState(false);
+  const [view,setView]             = useState("lista");
+  const [selected,setSelected]     = useState(null);
+  const [formData,setFormData]     = useState(EMPTY);
+  const [isEditing,setIsEditing]   = useState(false);
+  const [search,setSearch]         = useState("");
+  const [filterEst,setFilterEst]   = useState("Todos");
+  const [deleteConfirm,setDeleteConfirm] = useState(null);
+  const [submitting,setSubmitting] = useState(false);
+  const [justSaved,setJustSaved]   = useState(null);
+
+  useEffect(()=>{
+    if(!loggedIn) return;
+    setLoading(true);
+    DB.getAll().then(d=>setArbitros(d||[])).catch(console.error).finally(()=>setLoading(false));
+  },[loggedIn]);
+
+  const handleLogin = () => setLoggedIn(true);
+  const handleLogout = () => { clearLogin(); setLoggedIn(false); setArbitros([]); };
+
+  const handleSave=useCallback(async()=>{
+    if(submitting) return; setSubmitting(true);
+    try{
+      const fecha_registro=new Date().toLocaleDateString("es-MX");
+      if(isEditing){
+        const u=await DB.update(selected.id,{...formData}); const a=u[0];
+        setArbitros(p=>p.map(x=>x.id===a.id?a:x)); setJustSaved(a);
+      } else {
+        const ins=await DB.insert({...formData,fecha_registro,codigo:"TEMP"});
+        const nid=ins[0].id; const codigo=genCodigo(nid);
+        await DB.update(nid,{codigo});
+        const a={...ins[0],codigo};
+        setArbitros(p=>[...p,a]); setJustSaved(a);
+      }
+      setFormData(EMPTY); setIsEditing(false); setSelected(null); setView("success");
+    }catch(e){ alert("Error al guardar: "+e.message); }
+    finally{ setSubmitting(false); }
+  },[formData,isEditing,selected,submitting]);
+
+  const handleDelete=useCallback(async(id)=>{ try{ await DB.delete(id); setArbitros(p=>p.filter(a=>a.id!==id)); setDeleteConfirm(null); setView("lista"); }catch(e){alert("Error: "+e.message);} },[]);
+  const openEdit=useCallback(a=>{setSelected(a);setFormData({...a});setIsEditing(true);setView("form");},[]);
+  const openCred=useCallback(a=>{setSelected(a);setView("credencial");},[]);
+  const openNew=useCallback(()=>{setFormData(EMPTY);setIsEditing(false);setSelected(null);setView("form");},[]);
+  const goLista=useCallback(()=>{setView("lista");setFormData(EMPTY);setIsEditing(false);},[]);
+
+  const filtered=arbitros.filter(a=>{
+    const m=`${a.nombre||""} ${a.apellido_paterno||""} ${a.apellido_materno||""} ${a.codigo||""}`.toLowerCase().includes(search.toLowerCase());
+    return m&&(filterEst==="Todos"||a.estatus===filterEst);
+  });
+
+  if(!loggedIn) return <LoginScreen onLogin={handleLogin}/>;
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white" style={{fontFamily:"'DM Sans',sans-serif"}}>
+      <header className="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-sm sticky top-0 z-20">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-display text-white text-lg">AF</div>
+            <div>
+              <div className="font-display text-xl tracking-widest leading-none">AFFL REFEREES</div>
+              <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400"/><div style={{fontSize:10}} className="text-slate-500 uppercase tracking-widest">La Laguna · En línea</div></div>
+            </div>
+          </div>
+          <div className="flex gap-2 items-center">
+            {view!=="lista"&&<button onClick={goLista} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-300 transition-all">← Lista</button>}
+            {view==="lista"&&<button onClick={openNew} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all">+ Nuevo</button>}
+            <button onClick={handleLogout} title="Cerrar sesión" className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-400 transition-all">⎋</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-6 fade-in">
+        {loading&&<div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/></div>}
+
+        {!loading&&view==="lista"&&(
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[{l:"Total",v:arbitros.length,c:"text-white"},{l:"Activos",v:arbitros.filter(a=>a.estatus==="Activo").length,c:"text-emerald-400"},{l:"Inactivos",v:arbitros.filter(a=>a.estatus==="Inactivo").length,c:"text-slate-400"},{l:"Suspendidos",v:arbitros.filter(a=>a.estatus==="Suspendido").length,c:"text-red-400"}].map(s=>(
+                <div key={s.l} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4"><div className={`text-2xl font-display ${s.c}`}>{s.v}</div><div className="text-xs text-slate-500 uppercase tracking-widest mt-0.5">{s.l}</div></div>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input value={search} onChange={e=>setSearch(e.target.value.toUpperCase())} placeholder="BUSCAR POR NOMBRE O CÓDIGO..." className="flex-1 bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-all uppercase"/>
+              <div className="flex gap-2 flex-wrap">{["Todos",...ESTATUSES].map(e=><button key={e} onClick={()=>setFilterEst(e)} className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${filterEst===e?"bg-blue-600 text-white":"bg-slate-900/60 border border-slate-800 text-slate-400 hover:text-white"}`}>{e}</button>)}</div>
+            </div>
+            {filtered.length===0?(
+              <div className="text-center py-20 text-slate-600"><div className="text-5xl mb-3">🏈</div><div className="font-display text-2xl tracking-widest">SIN ÁRBITROS</div><div className="text-sm mt-2">Registra el primer árbitro</div><button onClick={openNew} className="mt-4 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-sm transition-all">+ Registrar Árbitro</button></div>
+            ):(
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-800"><th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest text-slate-500">Árbitro</th><th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest text-slate-500 hidden sm:table-cell">Nivel</th><th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest text-slate-500">Estatus</th><th className="px-4 py-3"></th></tr></thead>
+                  <tbody>{filtered.map((a,i)=>(
+                    <tr key={a.id} className={`border-b border-slate-800/50 last:border-0 ${i%2===0?"bg-slate-900/20":""}`}>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3">{a.fotografia?<img src={a.fotografia} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 flex-shrink-0"/>:<div className="w-10 h-10 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center flex-shrink-0">👤</div>}<div><div className="font-display text-blue-400 tracking-widest text-sm leading-none">{a.codigo}</div><div className="text-white font-medium">{a.nombre} {a.apellido_paterno}</div><div className="text-slate-500 text-xs">{a.ciudad}</div></div></div></td>
+                      <td className="px-4 py-3 hidden sm:table-cell"><span className={`px-2 py-1 rounded-lg text-xs font-semibold ${NVC[a.nivel]||"text-slate-400"}`}>{a.nivel||"—"}</span></td>
+                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-lg text-xs font-semibold ${BADGE[a.estatus]}`}>{a.estatus}</span></td>
+                      <td className="px-4 py-3"><div className="flex gap-2 justify-end"><button onClick={()=>openCred(a)} className="px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/30 text-blue-400 text-xs font-bold transition-all">Credencial</button><button onClick={()=>openEdit(a)} className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all">Editar</button><button onClick={()=>setDeleteConfirm(a.id)} className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold transition-all">✕</button></div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        {view==="form"&&<ArbitroForm formData={formData} setFormData={setFormData} onSave={handleSave} onCancel={goLista} isEditing={isEditing} submitting={submitting}/>}
+        {view==="success"&&justSaved&&<SuccessScreen arbitro={justSaved} onVerCredencial={()=>{setSelected(justSaved);setView("credencial");}} onNuevo={()=>{setFormData(EMPTY);setView("form");}} onLista={goLista}/>}
+        {view==="credencial"&&selected&&<Credencial arbitro={selected} onEdit={openEdit} onDelete={id=>setDeleteConfirm(id)}/>}
+      </main>
+
+      {deleteConfirm&&(
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full space-y-4">
+            <div className="font-display text-2xl tracking-widest text-red-400">¿CONFIRMAR?</div>
+            <p className="text-slate-300 text-sm">El registro se eliminará permanentemente.</p>
+            <div className="flex gap-3"><button onClick={()=>setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-all">Cancelar</button><button onClick={()=>handleDelete(deleteConfirm)} className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-all">Eliminar</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
